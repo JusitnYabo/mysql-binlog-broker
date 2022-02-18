@@ -1,11 +1,12 @@
 package com.xpp.mysql.binlog.broker.core;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.util.StringUtils;
 
-import java.util.Objects;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -63,8 +64,15 @@ public class MySQLBinlogLock implements BinlogLock {
     }
 
     @Override
-    public synchronized void unlock() {
-        //  并没有真实删除锁，只是关闭定时任务续租，让锁自然释放
+    public void unlock() {
+        //  使用lua脚本释放锁
+        DefaultRedisScript<String> redisScript = new DefaultRedisScript<>();
+        //用于解锁的lua脚本位置
+        redisScript.setLocation(new ClassPathResource("unlock.lua"));
+        redisScript.setResultType(String.class);
+        //  没有指定序列化方式，默认使用上面配置的
+        stringRedisTemplate.execute(redisScript, Collections.singletonList(key), value);
+        //  关闭续租定时任务
         if (Objects.nonNull(timer)) {
             timer.cancel();
         }
